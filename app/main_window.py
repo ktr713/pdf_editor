@@ -6,7 +6,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QUndoStack
 from PySide6.QtWidgets import QFileDialog, QListWidget, QMainWindow, QMessageBox, QSplitter, QStatusBar, QToolBar
 
-from app.commands.element_commands import AddElementCommand, DeleteElementCommand, MoveElementCommand
+from app.commands.element_commands import AddElementCommand, AddElementsCommand, DeleteElementCommand, MoveElementCommand
+from app.dialogs.page_number_dialog import PageNumberDialog
 from app.dialogs.text_dialog import TextDialog
 from app.models.document_model import DocumentModel
 from app.models.element_model import ImageElement, TextElement
@@ -31,6 +32,7 @@ class MainWindow(QMainWindow):
         self.save_action = QAction("上書き保存", self, shortcut=QKeySequence.Save, triggered=self.save)
         self.save_as_action = QAction("名前を付けて保存", self, shortcut=QKeySequence.SaveAs, triggered=self.save_as)
         self.text_action = QAction("文字追加", self, triggered=self.add_text); self.image_action = QAction("画像追加", self, triggered=self.add_image)
+        self.page_number_action = QAction("ページ番号追加", self, triggered=self.add_page_numbers)
         self.delete_action = QAction("削除", self, shortcut=QKeySequence.Delete, triggered=self.delete_selected)
         self.undo_action = self.undo.createUndoAction(self, "元に戻す"); self.undo_action.setShortcut(QKeySequence.Undo)
         self.redo_action = self.undo.createRedoAction(self, "やり直す"); self.redo_action.setShortcut(QKeySequence.Redo)
@@ -39,11 +41,11 @@ class MainWindow(QMainWindow):
     def _menus(self) -> None:
         file = self.menuBar().addMenu("ファイル"); file.addActions([self.open_action, self.save_action, self.save_as_action]); file.addSeparator(); file.addAction("終了", self.close)
         edit = self.menuBar().addMenu("編集"); edit.addActions([self.undo_action, self.redo_action, self.delete_action])
-        insert = self.menuBar().addMenu("挿入"); insert.addActions([self.text_action, self.image_action])
+        insert = self.menuBar().addMenu("挿入"); insert.addActions([self.text_action, self.image_action, self.page_number_action])
         view = self.menuBar().addMenu("表示"); view.addActions([self.zoom_in_action, self.zoom_out_action])
 
     def _toolbar(self) -> None:
-        bar = QToolBar(); self.addToolBar(bar); bar.addActions([self.open_action, self.save_action, self.save_as_action]); bar.addSeparator(); bar.addActions([self.undo_action, self.redo_action]); bar.addSeparator(); bar.addActions([self.text_action, self.image_action, self.delete_action])
+        bar = QToolBar(); self.addToolBar(bar); bar.addActions([self.open_action, self.save_action, self.save_as_action]); bar.addSeparator(); bar.addActions([self.undo_action, self.redo_action]); bar.addSeparator(); bar.addActions([self.text_action, self.image_action, self.page_number_action, self.delete_action])
 
     def open_pdf(self) -> None:
         if not self._confirm_discard(): return
@@ -57,9 +59,10 @@ class MainWindow(QMainWindow):
         if not self.model: return
         dialog = TextDialog(self)
         if dialog.exec() and dialog.text.text():
-            page = self.model.pages[self.view.page_index]; color = dialog.color
-            element = TextElement(page.page_index, page.width_pt/2-50, page.height_pt/2, 100, dialog.size.value()*1.4, text=dialog.text.text(), font_file=FontService().find_default_japanese_font(), font_size_pt=dialog.size.value(), color=(color.red(), color.green(), color.blue()))
-            self.undo.push(AddElementCommand(self.model, element, self._refresh))
+            pages = self.model.pages if dialog.scope.currentData() == "all_pages" else [self.model.pages[self.view.page_index]]
+            color = dialog.color; font_file = FontService().find_default_japanese_font()
+            elements = [TextElement(page.page_index, page.width_pt/2-50, page.height_pt/2, 100, dialog.size.value()*1.4, text=dialog.text.text(), font_file=font_file, font_size_pt=dialog.size.value(), color=(color.red(), color.green(), color.blue())) for page in pages]
+            self.undo.push(AddElementsCommand(self.model, elements, self._refresh) if len(elements) > 1 else AddElementCommand(self.model, elements[0], self._refresh))
 
     def add_image(self) -> None:
         if not self.model: return
@@ -67,10 +70,25 @@ class MainWindow(QMainWindow):
         if not path: return
         try:
             with Image.open(path) as image: image.verify(); width, height = image.size
-            page = self.model.pages[self.view.page_index]; max_width = min(180.0, page.width_pt*.4); scale = max_width/width
-            element = ImageElement(page.page_index, (page.width_pt-max_width)/2, (page.height_pt-height*scale)/2, max_width, height*scale, image_path=Path(path))
-            self.undo.push(AddElementCommand(self.model, element, self._refresh))
+            all_pages = QMessageBox.question(self, "適用範囲", "すべてのページに画像を追加しますか？", QMessageBox.Yes | QMessageBox.No, QMessageBox.No) == QMessageBox.Yes
+            pages = self.model.pages if all_pages else [self.model.pages[self.view.page_index]]
+            elements = []
+            for page in pages:
+                max_width = min(180.0, page.width_pt*.4); scale = max_width/width
+                elements.append(ImageElement(page.page_index, (page.width_pt-max_width)/2, (page.height_pt-height*scale)/2, max_width, height*scale, image_path=Path(path)))
+            self.undo.push(AddElementsCommand(self.model, elements, self._refresh) if len(elements) > 1 else AddElementCommand(self.model, elements[0], self._refresh))
         except Exception as exc: log.exception("Image failed"); QMessageBox.critical(self, "画像エラー", f"画像を読み込めませんでした。\n\n{exc}")
+
+    def add_page_numbers(self) -> None:
+        if not self.model: return
+        dialog = PageNumberDialog(self)
+        if not dialog.exec(): return
+        color = dialog.color; size = dialog.size.value(); start = dialog.start_number.value(); font_file = FontService().find_default_japanese_font()
+        elements = []
+        for offset, page in enumerate(self.model.pages):
+            text = str(start + offset); width = max(40.0, len(text) * size)
+            elements.append(TextElement(page.page_index, (page.width_pt-width)/2, page.height_pt-size*2, width, size*1.4, text=text, font_file=font_file, font_size_pt=size, color=(color.red(), color.green(), color.blue()), alignment="center"))
+        self.undo.push(AddElementsCommand(self.model, elements, self._refresh, "ページ番号を追加"))
 
     def delete_selected(self) -> None:
         if self.model and self.selected: self.undo.push(DeleteElementCommand(self.model, self.selected, self._refresh)); self.selected = None

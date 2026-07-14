@@ -18,6 +18,22 @@ class AddElementCommand(QUndoCommand):
         self.refresh()
 
 
+class AddElementsCommand(QUndoCommand):
+    def __init__(self, model: DocumentModel, elements: list[ElementModel], refresh, text: str = "要素を一括追加") -> None:
+        super().__init__(text)
+        self.model, self.elements, self.refresh = model, elements, refresh
+
+    def redo(self) -> None:
+        for element in self.elements:
+            self.model.add_element(element)
+        self.refresh()
+
+    def undo(self) -> None:
+        for element in reversed(self.elements):
+            self.model.remove_element(element)
+        self.refresh()
+
+
 class DeleteElementCommand(QUndoCommand):
     def __init__(self, model: DocumentModel, element: ElementModel, refresh) -> None:
         super().__init__("要素を削除")

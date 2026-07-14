@@ -47,10 +47,14 @@ class PdfView(QGraphicsView):
     def mouseReleaseEvent(self, event) -> None:
         item = self.itemAt(event.position().toPoint())
         super().mouseReleaseEvent(event)
+        self._commit_item_move(item)
+
+    def _commit_item_move(self, item) -> None:
         if item and item.data(0) and self.model:
             element = self.model.find_element(item.data(0)); old = item.data(1); new = item.pos()
             if element and old != new:
-                self.element_moved.emit(element, (old.x()/self.zoom, old.y()/self.zoom), (new.x()/self.zoom, new.y()/self.zoom)); item.setData(1, QPointF(new))
+                item.setData(1, QPointF(new))
+                self.element_moved.emit(element, (old.x()/self.zoom, old.y()/self.zoom), (new.x()/self.zoom, new.y()/self.zoom))
 
     def _selection(self) -> None:
         selected = self.scene.selectedItems()

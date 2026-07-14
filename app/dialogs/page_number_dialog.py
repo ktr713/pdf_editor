@@ -1,19 +1,19 @@
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QColorDialog, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QLineEdit, QPushButton
+from PySide6.QtWidgets import QColorDialog, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QPushButton, QSpinBox
 
 
-class TextDialog(QDialog):
+class PageNumberDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("文字の追加")
-        self.text = QLineEdit()
+        self.setWindowTitle("ページ番号の追加")
+        self.start_number = QSpinBox(); self.start_number.setRange(-999999, 999999); self.start_number.setValue(1)
         self.size = QDoubleSpinBox(); self.size.setRange(4, 200); self.size.setValue(10)
-        self.scope = QComboBox(); self.scope.addItem("現在のページ", "current_page"); self.scope.addItem("すべてのページ", "all_pages")
         self.color = QColor("black")
         color_button = QPushButton("色を選択"); color_button.clicked.connect(self._choose_color)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
-        layout = QFormLayout(self); layout.addRow("文字列", self.text); layout.addRow("サイズ (pt)", self.size); layout.addRow("文字色", color_button); layout.addRow("適用範囲", self.scope); layout.addRow(buttons)
+        layout = QFormLayout(self)
+        layout.addRow("開始番号", self.start_number); layout.addRow("サイズ (pt)", self.size); layout.addRow("文字色", color_button); layout.addRow(buttons)
 
     def _choose_color(self) -> None:
         selected = QColorDialog.getColor(self.color, self)
