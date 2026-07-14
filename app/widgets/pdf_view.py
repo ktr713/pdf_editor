@@ -14,6 +14,7 @@ class PdfView(QGraphicsView):
 
     element_moved = Signal(object, object, object)
     selection_changed = Signal(object)
+    apply_to_all_pages_requested = Signal(object)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -59,3 +60,14 @@ class PdfView(QGraphicsView):
     def _selection(self) -> None:
         selected = self.scene.selectedItems()
         self.selection_changed.emit(self.model.find_element(selected[0].data(0)) if selected and self.model else None)
+
+    def contextMenuEvent(self, event) -> None:
+        item = self.itemAt(event.pos())
+        element = self.model.find_element(item.data(0)) if item and item.data(0) and self.model else None
+        if not element:
+            return super().contextMenuEvent(event)
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        apply_action = menu.addAction("すべてのページに適用")
+        if menu.exec(event.globalPos()) == apply_action:
+            self.apply_to_all_pages_requested.emit(element)

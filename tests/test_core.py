@@ -5,6 +5,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication, QGraphicsTextItem
 
 from app.commands.element_commands import AddElementsCommand
+from app.main_window import create_page_number_element
 from app.models.element_model import ImageElement, TextElement
 from app.services.coordinate_service import CoordinateService
 from app.services.pdf_service import PdfService
@@ -70,3 +71,46 @@ def test_add_elements_command_groups_all_pages(tmp_path: Path):
     assert [page.elements[0].text for page in model.pages] == ["5", "6"]
     command.undo()
     assert all(not page.elements for page in model.pages)
+
+
+def test_page_number_is_inserted_only_on_reference_page(tmp_path: Path):
+    source = tmp_path / "source.pdf"
+    doc = fitz.open(); doc.new_page(width=300, height=400); doc.new_page(width=600, height=800); doc.save(source); doc.close()
+    model = PdfService().load(source)
+    element = create_page_number_element(model, 0, 8, 10, (0, 0, 0), None)
+    assert element.page_index == 0
+    assert element.text == "8"
+    assert element.page_number_start == 8
+
+
+def test_copy_element_preserves_position_and_uses_new_ids(tmp_path: Path):
+    app = QApplication.instance() or QApplication([])
+    source = tmp_path / "source.pdf"
+    doc = fitz.open(); doc.new_page(); doc.new_page(); doc.save(source); doc.close()
+    model = PdfService().load(source); original = TextElement(0, 33, 44, 100, 20, text="Footer")
+    model.add_element(original)
+    from app.main_window import MainWindow
+    window = MainWindow(); window.model = model; window.view.model = model
+    window.apply_element_to_all_pages(original)
+    copied = model.pages[1].elements[0]
+    assert (copied.x_pt, copied.y_pt) == (33, 44)
+    assert copied.id != original.id
+    model.modified = False
+    window.close()
+
+
+def test_page_number_expands_after_positioning(tmp_path: Path):
+    app = QApplication.instance() or QApplication([])
+    source = tmp_path / "source.pdf"
+    doc = fitz.open(); doc.new_page(); doc.new_page(); doc.new_page(); doc.save(source); doc.close()
+    model = PdfService().load(source)
+    original = create_page_number_element(model, 0, 5, 10, (0, 0, 0), None)
+    original.x_pt, original.y_pt = 77, 88
+    model.add_element(original)
+    from app.main_window import MainWindow
+    window = MainWindow(); window.model = model; window.view.model = model
+    window.apply_element_to_all_pages(original)
+    assert [page.elements[0].text for page in model.pages] == ["5", "6", "7"]
+    assert {(page.elements[0].x_pt, page.elements[0].y_pt) for page in model.pages} == {(77, 88)}
+    model.modified = False
+    window.close()

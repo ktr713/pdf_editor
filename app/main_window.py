@@ -1,5 +1,7 @@
 import logging
+from dataclasses import replace
 from pathlib import Path
+from uuid import uuid4
 
 from PIL import Image
 from PySide6.QtCore import Qt
@@ -19,11 +21,20 @@ from app.widgets.pdf_view import PdfView
 log = logging.getLogger(__name__)
 
 
+def create_page_number_element(model: DocumentModel, reference_page_index: int, start: int, size: float, color: tuple[int, int, int], font_file):
+    texts = [str(start + offset) for offset in range(model.page_count)]
+    width = max(40.0, max(map(len, texts)) * size)
+    reference = model.pages[reference_page_index]
+    x = (reference.width_pt - width) / 2
+    y = reference.height_pt - size * 2
+    return TextElement(reference_page_index, x, y, width, size * 1.4, text=texts[reference_page_index], font_file=font_file, font_size_pt=size, color=color, alignment="center", page_number_start=start)
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__(); self.setWindowTitle("PDF Overlay Editor"); self.resize(1200, 800)
         self.model: DocumentModel | None = None; self.selected = None; self.pdf = PdfService(); self.saver = SaveService(); self.undo = QUndoStack(self)
-        self.pages = QListWidget(); self.pages.setMaximumWidth(150); self.view = PdfView(); self.view.element_moved.connect(self._move); self.view.selection_changed.connect(lambda e: setattr(self, "selected", e)); self.pages.currentRowChanged.connect(self._show_page)
+        self.pages = QListWidget(); self.pages.setMaximumWidth(150); self.view = PdfView(); self.view.element_moved.connect(self._move); self.view.selection_changed.connect(lambda e: setattr(self, "selected", e)); self.view.apply_to_all_pages_requested.connect(self.apply_element_to_all_pages); self.pages.currentRowChanged.connect(self._show_page)
         splitter = QSplitter(); splitter.addWidget(self.pages); splitter.addWidget(self.view); splitter.setStretchFactor(1, 1); self.setCentralWidget(splitter); self.setStatusBar(QStatusBar())
         self._actions(); self._menus(); self._toolbar(); self._update_title()
 
@@ -84,11 +95,22 @@ class MainWindow(QMainWindow):
         dialog = PageNumberDialog(self)
         if not dialog.exec(): return
         color = dialog.color; size = dialog.size.value(); start = dialog.start_number.value(); font_file = FontService().find_default_japanese_font()
+        element = create_page_number_element(self.model, self.view.page_index, start, size, (color.red(), color.green(), color.blue()), font_file)
+        self.undo.push(AddElementCommand(self.model, element, self._refresh))
+        self.statusBar().showMessage("ページ番号を配置後、右クリックして「すべてのページに適用」してください", 8000)
+
+    def apply_element_to_all_pages(self, element) -> None:
+        if not self.model: return
         elements = []
-        for offset, page in enumerate(self.model.pages):
-            text = str(start + offset); width = max(40.0, len(text) * size)
-            elements.append(TextElement(page.page_index, (page.width_pt-width)/2, page.height_pt-size*2, width, size*1.4, text=text, font_file=font_file, font_size_pt=size, color=(color.red(), color.green(), color.blue()), alignment="center"))
-        self.undo.push(AddElementsCommand(self.model, elements, self._refresh, "ページ番号を追加"))
+        for page in self.model.pages:
+            if page.page_index == element.page_index: continue
+            changes = {"page_index": page.page_index, "id": str(uuid4())}
+            if isinstance(element, TextElement) and element.page_number_start is not None:
+                changes["text"] = str(element.page_number_start + page.page_index)
+            elements.append(replace(element, **changes))
+        if elements:
+            self.undo.push(AddElementsCommand(self.model, elements, self._refresh, "すべてのページに適用"))
+            self.statusBar().showMessage(f"{len(elements)}ページに適用しました", 5000)
 
     def delete_selected(self) -> None:
         if self.model and self.selected: self.undo.push(DeleteElementCommand(self.model, self.selected, self._refresh)); self.selected = None
