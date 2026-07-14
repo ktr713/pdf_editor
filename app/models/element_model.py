@@ -30,6 +30,7 @@ class TextElement(ElementModel):
     font_size_pt: float = 10.0
     color: tuple[int, int, int] = (0, 0, 0)
     alignment: str = "left"
+    page_number_start: int | None = None
 
 
 @dataclass

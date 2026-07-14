@@ -21,13 +21,13 @@ from app.widgets.pdf_view import PdfView
 log = logging.getLogger(__name__)
 
 
-def create_page_number_elements(model: DocumentModel, reference_page_index: int, start: int, size: float, color: tuple[int, int, int], font_file):
+def create_page_number_element(model: DocumentModel, reference_page_index: int, start: int, size: float, color: tuple[int, int, int], font_file):
     texts = [str(start + offset) for offset in range(model.page_count)]
     width = max(40.0, max(map(len, texts)) * size)
     reference = model.pages[reference_page_index]
     x = (reference.width_pt - width) / 2
     y = reference.height_pt - size * 2
-    return [TextElement(page.page_index, x, y, width, size * 1.4, text=texts[offset], font_file=font_file, font_size_pt=size, color=color, alignment="center") for offset, page in enumerate(model.pages)]
+    return TextElement(reference_page_index, x, y, width, size * 1.4, text=texts[reference_page_index], font_file=font_file, font_size_pt=size, color=color, alignment="center", page_number_start=start)
 
 
 class MainWindow(QMainWindow):
@@ -95,12 +95,19 @@ class MainWindow(QMainWindow):
         dialog = PageNumberDialog(self)
         if not dialog.exec(): return
         color = dialog.color; size = dialog.size.value(); start = dialog.start_number.value(); font_file = FontService().find_default_japanese_font()
-        elements = create_page_number_elements(self.model, self.view.page_index, start, size, (color.red(), color.green(), color.blue()), font_file)
-        self.undo.push(AddElementsCommand(self.model, elements, self._refresh, "ページ番号を追加"))
+        element = create_page_number_element(self.model, self.view.page_index, start, size, (color.red(), color.green(), color.blue()), font_file)
+        self.undo.push(AddElementCommand(self.model, element, self._refresh))
+        self.statusBar().showMessage("ページ番号を配置後、右クリックして「すべてのページに適用」してください", 8000)
 
     def apply_element_to_all_pages(self, element) -> None:
         if not self.model: return
-        elements = [replace(element, page_index=page.page_index, id=str(uuid4())) for page in self.model.pages if page.page_index != element.page_index]
+        elements = []
+        for page in self.model.pages:
+            if page.page_index == element.page_index: continue
+            changes = {"page_index": page.page_index, "id": str(uuid4())}
+            if isinstance(element, TextElement) and element.page_number_start is not None:
+                changes["text"] = str(element.page_number_start + page.page_index)
+            elements.append(replace(element, **changes))
         if elements:
             self.undo.push(AddElementsCommand(self.model, elements, self._refresh, "すべてのページに適用"))
             self.statusBar().showMessage(f"{len(elements)}ページに適用しました", 5000)
