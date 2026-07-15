@@ -39,7 +39,14 @@ class PdfView(QGraphicsView):
         border = self.scene.addRect(0, 0, width, height, QPen(QColor(96, 96, 96), 1)); border.setZValue(-0.5)
         for element in self.model.pages[self.page_index].elements:
             if isinstance(element, TextElement):
-                item = QGraphicsTextItem(element.text); font = item.font(); font.setPointSizeF(element.font_size_pt * self.zoom); item.setFont(font); item.setDefaultTextColor(QColor(*element.color))
+                item = QGraphicsTextItem(element.text)
+                item.document().setDocumentMargin(0)
+                font = item.font()
+                # PDF points map directly to rendered pixels at zoom 1.0.
+                # Pixel sizing avoids Qt applying the screen DPI a second time.
+                font.setPixelSize(max(1, round(element.font_size_pt * self.zoom)))
+                item.setFont(font)
+                item.setDefaultTextColor(QColor(*element.color))
             elif isinstance(element, ImageElement) and element.image_path:
                 pix = QPixmap(str(element.image_path)).scaled(round(element.width_pt*self.zoom), round(element.height_pt*self.zoom), Qt.IgnoreAspectRatio, Qt.SmoothTransformation); item = QGraphicsPixmapItem(pix)
             else: continue
