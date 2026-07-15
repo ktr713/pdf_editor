@@ -63,3 +63,20 @@ class MoveElementCommand(QUndoCommand):
 
     def undo(self) -> None:
         self._set(self.old)
+
+
+class ResizeElementCommand(QUndoCommand):
+    def __init__(self, model: DocumentModel, element: ElementModel, old: tuple[float, float], new: tuple[float, float], refresh) -> None:
+        super().__init__("画像サイズを変更")
+        self.model, self.element, self.old, self.new, self.refresh = model, element, old, new, refresh
+
+    def _set(self, size: tuple[float, float]) -> None:
+        self.element.width_pt, self.element.height_pt = size
+        self.model.modified = True
+        self.refresh()
+
+    def redo(self) -> None:
+        self._set(self.new)
+
+    def undo(self) -> None:
+        self._set(self.old)
