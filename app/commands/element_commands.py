@@ -49,12 +49,29 @@ class DeleteElementCommand(QUndoCommand):
 
 
 class MoveElementCommand(QUndoCommand):
-    def __init__(self, model: DocumentModel, element: ElementModel, old: tuple[float, float], new: tuple[float, float], refresh) -> None:
+    def __init__(self, model: DocumentModel, element: ElementModel, old: tuple[float, float, bool], new: tuple[float, float, bool], refresh) -> None:
         super().__init__("要素を移動")
         self.model, self.element, self.old, self.new, self.refresh = model, element, old, new, refresh
 
     def _set(self, point: tuple[float, float]) -> None:
         self.element.x_pt, self.element.y_pt = point
+        self.model.modified = True
+        self.refresh()
+
+    def redo(self) -> None:
+        self._set(self.new)
+
+    def undo(self) -> None:
+        self._set(self.old)
+
+
+class ResizeElementCommand(QUndoCommand):
+    def __init__(self, model: DocumentModel, element: ElementModel, old: tuple[float, float], new: tuple[float, float], refresh) -> None:
+        super().__init__("画像サイズを変更")
+        self.model, self.element, self.old, self.new, self.refresh = model, element, old, new, refresh
+
+    def _set(self, size: tuple[float, float, bool]) -> None:
+        self.element.width_pt, self.element.height_pt, self.element.keep_aspect_ratio = size
         self.model.modified = True
         self.refresh()
 

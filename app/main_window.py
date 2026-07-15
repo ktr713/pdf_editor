@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QUndoStack
 from PySide6.QtWidgets import QFileDialog, QListWidget, QMainWindow, QMessageBox, QSplitter, QStatusBar, QToolBar
 
-from app.commands.element_commands import AddElementCommand, AddElementsCommand, DeleteElementCommand, MoveElementCommand
+from app.commands.element_commands import AddElementCommand, AddElementsCommand, DeleteElementCommand, MoveElementCommand, ResizeElementCommand
 from app.dialogs.page_number_dialog import PageNumberDialog
 from app.dialogs.text_dialog import TextDialog
 from app.models.document_model import DocumentModel
@@ -34,7 +34,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__(); self.setWindowTitle("PDF Overlay Editor"); self.resize(1200, 800)
         self.model: DocumentModel | None = None; self.selected = None; self.pdf = PdfService(); self.saver = SaveService(); self.undo = QUndoStack(self)
-        self.pages = QListWidget(); self.pages.setMaximumWidth(150); self.view = PdfView(); self.view.element_moved.connect(self._move); self.view.selection_changed.connect(lambda e: setattr(self, "selected", e)); self.view.apply_to_all_pages_requested.connect(self.apply_element_to_all_pages); self.pages.currentRowChanged.connect(self._show_page)
+        self.pages = QListWidget(); self.pages.setMaximumWidth(150); self.view = PdfView(); self.view.element_moved.connect(self._move); self.view.element_resized.connect(self._resize); self.view.selection_changed.connect(lambda e: setattr(self, "selected", e)); self.view.apply_to_all_pages_requested.connect(self.apply_element_to_all_pages); self.pages.currentRowChanged.connect(self._show_page)
         splitter = QSplitter(); splitter.addWidget(self.pages); splitter.addWidget(self.view); splitter.setStretchFactor(1, 1); self.setCentralWidget(splitter); self.setStatusBar(QStatusBar())
         self._actions(); self._menus(); self._toolbar(); self._update_title()
 
@@ -117,6 +117,9 @@ class MainWindow(QMainWindow):
 
     def _move(self, element, old, new) -> None:
         if self.model: self.undo.push(MoveElementCommand(self.model, element, old, new, self._refresh))
+
+    def _resize(self, element, old, new) -> None:
+        if self.model: self.undo.push(ResizeElementCommand(self.model, element, old, new, self._refresh))
 
     def _show_page(self, index: int) -> None:
         if self.model and index >= 0: self.view.set_document(self.model, index); self.statusBar().showMessage(f"Page {index+1} / {self.model.page_count}   Zoom: {self.view.zoom*100:.0f}%")
