@@ -4,6 +4,7 @@ from PySide6.QtCore import QPointF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QImage, QPen, QPixmap
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsPixmapItem, QGraphicsScene, QGraphicsTextItem, QGraphicsView
 
+from app.dialogs.image_size_dialog import ImageSizeDialog
 from app.models.document_model import DocumentModel
 from app.models.element_model import ImageElement, TextElement
 from app.services.pdf_service import PdfService
@@ -13,6 +14,7 @@ class PdfView(QGraphicsView):
     PAGE_MARGIN = 24
 
     element_moved = Signal(object, object, object)
+    element_resized = Signal(object, object, object)
     selection_changed = Signal(object)
     apply_to_all_pages_requested = Signal(object)
 
@@ -39,7 +41,7 @@ class PdfView(QGraphicsView):
             if isinstance(element, TextElement):
                 item = QGraphicsTextItem(element.text); font = item.font(); font.setPointSizeF(element.font_size_pt * self.zoom); item.setFont(font); item.setDefaultTextColor(QColor(*element.color))
             elif isinstance(element, ImageElement) and element.image_path:
-                pix = QPixmap(str(element.image_path)).scaled(round(element.width_pt*self.zoom), round(element.height_pt*self.zoom), Qt.KeepAspectRatio, Qt.SmoothTransformation); item = QGraphicsPixmapItem(pix)
+                pix = QPixmap(str(element.image_path)).scaled(round(element.width_pt*self.zoom), round(element.height_pt*self.zoom), Qt.IgnoreAspectRatio, Qt.SmoothTransformation); item = QGraphicsPixmapItem(pix)
             else: continue
             item.setPos(element.x_pt*self.zoom, element.y_pt*self.zoom); item.setFlags(QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemIsMovable); item.setData(0, element.id); item.setData(1, QPointF(item.pos())); self.scene.addItem(item); self._items[element.id] = item
         margin = self.PAGE_MARGIN
@@ -68,6 +70,20 @@ class PdfView(QGraphicsView):
             return super().contextMenuEvent(event)
         from PySide6.QtWidgets import QMenu
         menu = QMenu(self)
+        resize_action = menu.addAction("画像サイズを編集") if isinstance(element, ImageElement) else None
         apply_action = menu.addAction("すべてのページに適用")
-        if menu.exec(event.globalPos()) == apply_action:
+        selected_action = menu.exec(event.globalPos())
+        if selected_action == resize_action:
+            self._edit_image_size(element)
+        elif selected_action == apply_action:
             self.apply_to_all_pages_requested.emit(element)
+
+    def _edit_image_size(self, element: ImageElement) -> None:
+        dialog = ImageSizeDialog(element.width_pt, element.height_pt, element.keep_aspect_ratio, self)
+        if not dialog.exec():
+            return
+        width, height, keep_aspect_ratio = dialog.values()
+        old = (element.width_pt, element.height_pt, element.keep_aspect_ratio)
+        new = (width, height, keep_aspect_ratio)
+        if old != new:
+            self.element_resized.emit(element, old, new)
